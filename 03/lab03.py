@@ -1,7 +1,5 @@
 import argparse
 import os
-import subprocess
-import sys
 
 import cv2 as cv
 import numpy as np
@@ -38,7 +36,7 @@ def is_word(black_pixel_rate, white_to_black_transition_rate):
 
 
 def is_char(black_pixel_rate, white_to_black_transition_rate):
-    return .1 < black_pixel_rate < .7 and white_to_black_transition_rate < .5
+    return .1 < black_pixel_rate < .8 and white_to_black_transition_rate < .7
 
 
 if __name__ == '__main__':
@@ -81,8 +79,8 @@ if __name__ == '__main__':
     text_img = np.copy(img)
 
     kernel_1 = {
-        "char": np.array(np.ones((1, 1)) * BLACK, dtype=np.uint8),
-        "word": np.array(np.ones((1, 12)) * BLACK, dtype=np.uint8),
+        "char": np.array(np.ones((9, 1)) * BLACK, dtype=np.uint8),
+        "word": np.array(np.ones((9, 12)) * BLACK, dtype=np.uint8),
         "line": np.array(np.ones((1, 33)) * BLACK, dtype=np.uint8),
         "line2": np.array(np.ones((1, 100)) * BLACK, dtype=np.uint8)
     }[seg]
@@ -111,7 +109,7 @@ if __name__ == '__main__':
 
     kernel_6 = {
         "char": np.array(np.ones((1, 1)) * BLACK, dtype=np.uint8),
-        "word": np.array(np.ones((1, 10)) * BLACK, dtype=np.uint8),
+        "word": np.array(np.ones((5, 10)) * BLACK, dtype=np.uint8),
         "line": np.array(np.ones((1, 15)) * BLACK, dtype=np.uint8),
         "line2": np.array(np.ones((1, 30)) * BLACK, dtype=np.uint8)
     }[seg]
@@ -126,6 +124,7 @@ if __name__ == '__main__':
     img7c = np.copy(img7b)
     contours, hierarchy = cv.findContours(img7b, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
     idx = 0
+    text_cont = 0
     for cnt in contours:
         idx += 1
         x, y, w, h = cv.boundingRect(cnt)
@@ -153,8 +152,10 @@ if __name__ == '__main__':
             "line2": is_line
         }[seg]
         if is_text(black_pixels_rate, transition_rate):
+            text_cont += 1
             cv.rectangle(text_img, (x, y), (x + w, y + h), color=1, thickness=1)
     save_img(img7c, "./imgs/out/{}/{}_step_7.pbm".format(seg, img_name))
+    print("Found {} text parts".format(text_cont))
 
     black_pixels = np.where(text_img == BLACK)
     white_pixels = np.where(text_img == WHITE)
