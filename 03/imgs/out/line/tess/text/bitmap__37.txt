@@ -1,0 +1,2 @@
+set of five states, can be partitioned (a finer partition) to
+

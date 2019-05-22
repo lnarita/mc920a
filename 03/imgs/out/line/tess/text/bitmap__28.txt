@@ -1,0 +1,2 @@
+If there no edges in the diagraph, i.e., a null
+

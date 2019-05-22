@@ -1,0 +1,2 @@
+If there are at least two vertices connected with
+

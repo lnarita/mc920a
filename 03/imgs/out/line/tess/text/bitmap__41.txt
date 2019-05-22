@@ -1,0 +1,2 @@
+sensors. If new sensors are added, the set of states is parti-
+

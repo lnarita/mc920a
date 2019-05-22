@@ -1,0 +1,2 @@
+If this contact is a point or a line, it is classified
+
