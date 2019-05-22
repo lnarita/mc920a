@@ -1,2 +1,0 @@
-describe both the ‘‘touch’’ and ‘‘on-top-of’’ relations. The
-

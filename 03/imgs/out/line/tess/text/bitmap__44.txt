@@ -1,2 +1,0 @@
-environment of the Turing machine as perceived by the
-

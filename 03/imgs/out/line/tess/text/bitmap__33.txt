@@ -1,2 +1,0 @@
-If there are no vertices in the diagraph, i.e., an
-

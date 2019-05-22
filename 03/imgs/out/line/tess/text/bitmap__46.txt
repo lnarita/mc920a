@@ -1,2 +1,0 @@
-when a pathological state is detected.
-

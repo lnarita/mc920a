@@ -1,2 +1,0 @@
-3) States: This is a finite set of states describing the
-

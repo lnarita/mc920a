@@ -1,2 +1,0 @@
-states of the machine are:
-

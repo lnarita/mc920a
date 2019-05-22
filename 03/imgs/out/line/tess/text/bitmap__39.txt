@@ -1,2 +1,0 @@
-sensors. For example, if a sensor capable of determining the
-

@@ -1,2 +1,0 @@
-If there is one or more directed cycles in the
-
