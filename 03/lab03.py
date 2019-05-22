@@ -30,11 +30,11 @@ def save_img(img, name):
 
 
 def is_line(black_pixel_rate, white_to_black_transition_rate):
-    return .1 < black_pixel_rate < .5 and white_to_black_transition_rate < .5
+    return .1 < black_pixel_rate < .5 and white_to_black_transition_rate > .2
 
 
 def is_word(black_pixel_rate, white_to_black_transition_rate):
-    return .1 < black_pixel_rate < .6 and white_to_black_transition_rate < .486
+    return .1 < black_pixel_rate < .6 and white_to_black_transition_rate > .2
 
 
 def is_char(black_pixel_rate, white_to_black_transition_rate):
