@@ -41,7 +41,7 @@ def create_visualization(img_a, img_b, keypoints_a, keypoints_b, matches, status
     # initialize the output visualization image
     (hA, wA) = img_a.shape
     (hB, wB) = img_b.shape
-    vis = np.zeros((max(hA, hB), wA + wB, 3), dtype="uint8")
+    vis = np.zeros((max(hA, hB), wA + wB), dtype="uint8")
     vis[0:hA, 0:wA] = img_a
     vis[0:hB, wA:] = img_b
 
@@ -51,15 +51,15 @@ def create_visualization(img_a, img_b, keypoints_a, keypoints_b, matches, status
         # matched
         if s == 1:
             # draw the match
-            ptA = (int(keypoints_a[queryIdx][0]), int(keypoints_a[queryIdx][1]))
-            ptB = (int(keypoints_b[trainIdx][0]) + wA, int(keypoints_b[trainIdx][1]))
+            ptA = (int(keypoints_a[queryIdx].pt[0]), int(keypoints_a[queryIdx].pt[1]))
+            ptB = (int(keypoints_b[trainIdx].pt[0]) + wA, int(keypoints_b[trainIdx].pt[1]))
             cv.line(vis, ptA, ptB, (0, 255, 0), 1)
 
     # return the visualization
     return vis
 
 
-def stitch(img_a, img_b, ratio, describe, matcher, reproj_threshold, visualize_process=False):
+def stitch(img_a, img_b, ratio, describe, matcher, reproj_threshold, visualize_process, idx_a, idx_b, img_name, algorithm):
     keypoints_a, features_a = describe(img_a)
     keypoints_b, features_b = describe(img_b)
 
@@ -69,14 +69,17 @@ def stitch(img_a, img_b, ratio, describe, matcher, reproj_threshold, visualize_p
         # (4)  selecionar as melhores correspondˆencias para cada descritor de imagem.
         H, status = estimate_homography(keypoints_a, keypoints_b, matches, reproj_threshold)
 
-        # (6)  aplicar uma proje ̧c ̃ao de perspectiva (cv2.warpPerspective) para alinhar as imagens.
-        result = warp_img(H, img_a, img_b)
+        if H is not None:
+            # (6)  aplicar uma proje ̧c ̃ao de perspectiva (cv2.warpPerspective) para alinhar as imagens.
+            result = warp_img(H, img_a, img_b)
 
-        if visualize_process:
-            # (8)  desenhar retas entre pontos correspondentes no par de imagens.
-            vis = create_visualization(img_a, img_b, keypoints_a, keypoints_b, matches, status)
-            save_img(vis, "./imgs/out/stitch_proc.jpeg")
-        return result
+            if visualize_process:
+                # (8)  desenhar retas entre pontos correspondentes no par de imagens.
+                vis = create_visualization(img_a, img_b, keypoints_a, keypoints_b, matches, status)
+                save_img(vis, "./imgs/out/stitch_proc_{}_{}_{}_{}.jpg".format(img_name, idx_a, idx_b, algorithm))
+            return result
+        else:
+            return img_a
     return img_a
 
 
@@ -90,7 +93,7 @@ def estimate_homography(keypoints_a, keypoints_b, matches, reproj_threshold):
 
 
 def warp_img(H, img_a, img_b):
-    result = cv.warpPerspective(img_a, H,
+    result = cv.warpPerspective(np.array(img_a, dtype="uint8"), H,
                                 (img_a.shape[1] + img_b.shape[1], max(img_a.shape[0], img_b.shape[0])))
 
     # (7)  unir as imagens alinhadas e criar a imagem panorˆamica.
@@ -107,6 +110,41 @@ def find_matches(features_a, features_b, matcher, ratio):
     return matches
 
 
+def create_panorama(descriptor_name, detector_name, normalized_imgs, output_path, img_name):
+    # (2) detect keypoints and extract local invariant descriptors
+    detector = {
+        "MSER": lambda: cv.MSER_create(),
+        "FAST": lambda: cv.FastFeatureDetector_create(),
+        "AGAST": lambda: cv.AgastFeatureDetector_create(),
+        "GFFT": lambda: cv.GFTTDetector_create(),
+        "STAR": lambda: cv.xfeatures2d.StarDetector_create()
+    }[detector_name]()
+    descriptor = {
+        "sift": lambda: cv.xfeatures2d.SIFT_create(),
+        "surf": lambda: cv.xfeatures2d.SURF_create(),
+        "brief": lambda: cv.xfeatures2d.BriefDescriptorExtractor_create(),
+        "orb": lambda: cv.ORB_create(nfeatures=1500),
+        "kaze": lambda: cv.KAZE_create(),
+        "akaze": lambda: cv.AKAZE_create(),
+    }[descriptor_name]()
+
+    def default_describe(img):
+        return descriptor.detectAndCompute(img.astype('uint8'), None)
+
+    descriptor_apply_function = {
+        "brief": lambda img: extract_and_describe_with_brief(img, detector, descriptor)
+    }.get(descriptor_name, lambda img: default_describe(img))
+    matcher = cv.BFMatcher()
+    ratio = 0.75
+    reproj_threshold = 4.
+    alg = descriptor_name if descriptor_name in ["sift", "surf", "orb", "kaze", "akaze"] else "{}_{}".format(descriptor_name,
+                                                                                                             detector_name)
+    result = reduce(lambda a, b: stitch(a[1], b[1], ratio, descriptor_apply_function, matcher, reproj_threshold, True, a[0] + 1, b[0] + 1, img_name,
+                                        alg),
+                    enumerate(normalized_imgs))
+    save_img(result, "{}/{}_result_{}.jpg".format(output_path, img_name, alg))
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
@@ -120,12 +158,10 @@ if __name__ == '__main__':
                         help="input image file path")
     parser.add_argument("--output_path", default="./imgs/out",
                         help="output image path")
-    parser.add_argument("--descriptor", choices=["sift", "surf", "orb", "brief", "kaze", "akaze"], default="sift",
+    parser.add_argument("--descriptor", choices=["sift", "surf", "orb", "brief", "kaze", "akaze", "all"], default="sift",
                         help="feature descriptor")
-    parser.add_argument("--detector", choices=["MSER", "FAST", "AGAST", "GFFT"], default="FAST",
+    parser.add_argument("--detector", choices=["MSER", "FAST", "AGAST", "GFFT", "STAR"], default="FAST",
                         help="feature detection")
-    parser.add_argument("--matcher", choices=["bf", "flann"], default="bf",
-                        help="feature matching")
 
     args = parser.parse_args()
 
@@ -142,41 +178,11 @@ if __name__ == '__main__':
     # (1) convert RGB image to grayscale
     imgs = [load_image("{}/{}.jpg".format(img_path, img_name_format.format(**{"i": i, "name": img_name}))).astype('uint8') for i in range(1, img_count + 1)]
     grayscale_imgs = [convert_to_grayscale(img) for img in imgs]
-    normalized_imgs = [normalize_img(grayscale_img, MIN, MAX).astype(int) for grayscale_img in grayscale_imgs]
+    normalized_imgs = [normalize_img(grayscale_img, MIN, MAX).astype(np.uint8) for grayscale_img in grayscale_imgs]
 
-    # (2) detect keypoints and extract local invariant descriptors
-    detector = {
-        "MSER": lambda: cv.MSER_create(),
-        "FAST": lambda: cv.FastFeatureDetector(),
-        "AGAST": lambda: cv.AgastFeatureDetector(),
-        "GFFT": lambda: cv.GFTTDetector()
-    }[args.detector]()
-
-    descriptor = {
-        "sift": lambda: cv.xfeatures2d.SIFT_create(),
-        "surf": lambda: cv.xfeatures2d.SURF_create(),
-        "brief": lambda: cv.DescriptorExtractor_create("BRIEF"),
-        "orb": lambda: cv.ORB_create(nfeatures=1500)
-    }[args.descriptor]()
-
-
-    def default_describe(img):
-        return descriptor.detectAndCompute(img.astype('uint8'), None)
-
-
-    descriptor_apply_function = {
-        "brief": lambda img: extract_and_describe_with_brief(img, detector, descriptor)
-    }.get(args.descriptor, lambda img: default_describe(img))
-
-    flann_params = [{"algorithm": 0, "trees": 5}, {"checks": 50}]
-
-    matcher = {
-        "bf": cv.BFMatcher(),
-        "flann": cv.FlannBasedMatcher(*flann_params)
-    }[args.matcher]
-
-    ratio = 0.75
-    reproj_threshold = 4.
-    result = reduce(lambda a, b: stitch(a, b, ratio, descriptor_apply_function, matcher, reproj_threshold, True), normalized_imgs)
-
-    save_img(result, "{}/{}_result.jpeg".format(output_path, img_name))
+    if args.descriptor == "all":
+        for dscrpt in ["orb", "brief", "kaze", "akaze"]:
+            for dtctr in ["MSER", "FAST", "AGAST", "GFFT", "STAR"] if dscrpt == "brief" else ["FAST"]:
+                create_panorama(dscrpt, dtctr, normalized_imgs, output_path, img_name)
+    else:
+        create_panorama(args.descriptor, args.detector, normalized_imgs, output_path, img_name)
