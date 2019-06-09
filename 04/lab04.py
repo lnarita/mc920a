@@ -37,6 +37,10 @@ def extract_and_describe_with_brief(img, detector, descriptor):
     return descriptor.compute(img, keypoints)
 
 
+def random_color():
+    return np.random.choice(range(256), size=3).astype(np.int, copy=False)
+
+
 def create_visualization(img_a, img_b, keypoints_a, keypoints_b, matches, status):
     # initialize the output visualization image
     (hA, wA) = img_a.shape
@@ -44,16 +48,17 @@ def create_visualization(img_a, img_b, keypoints_a, keypoints_b, matches, status
     vis = np.zeros((max(hA, hB), wA + wB), dtype="uint8")
     vis[0:hA, 0:wA] = img_a
     vis[0:hB, wA:] = img_b
+    vis = cv.cvtColor(vis, cv.COLOR_GRAY2RGB)
 
     # loop over the matches
     for ((trainIdx, queryIdx), s) in zip(matches, status):
-        # only process the match if the keypoint was successfully
-        # matched
+        # only process the match if the keypoint was successfully matched
         if s == 1:
             # draw the match
             ptA = (int(keypoints_a[queryIdx].pt[0]), int(keypoints_a[queryIdx].pt[1]))
             ptB = (int(keypoints_b[trainIdx].pt[0]) + wA, int(keypoints_b[trainIdx].pt[1]))
-            cv.line(vis, ptA, ptB, (0, 255, 0), 1)
+            color = random_color()
+            cv.line(vis, ptA, ptB, (int(color[0]), int(color[1]), int(color[2])), 1)
 
     # return the visualization
     return vis
@@ -63,31 +68,32 @@ def stitch(img_a, img_b, ratio, describe, matcher, reproj_threshold, visualize_p
     keypoints_a, features_a = describe(img_a)
     keypoints_b, features_b = describe(img_b)
 
-    # (3)  compute similarities between descriptors
+    # (3) compute similarities between descriptors
     matches = find_matches(features_a, features_b, matcher, ratio)
     if len(matches) > 4:
-        # (4)  selecionar as melhores correspondˆencias para cada descritor de imagem.
+        # (4) select matches
         H, status = estimate_homography(keypoints_a, keypoints_b, matches, reproj_threshold)
 
         if H is not None:
-            # (6)  aplicar uma proje ̧c ̃ao de perspectiva (cv2.warpPerspective) para alinhar as imagens.
+            # (6) warp and align images
             result = warp_img(H, img_a, img_b)
 
             if visualize_process:
-                # (8)  desenhar retas entre pontos correspondentes no par de imagens.
+                # (8) draw lines connecting corresponding points
                 vis = create_visualization(img_a, img_b, keypoints_a, keypoints_b, matches, status)
                 save_img(vis, "./imgs/out/stitch_proc_{}_{}_{}_{}.jpg".format(img_name, idx_a, idx_b, algorithm))
-            return result
+                save_img(result, "./imgs/out/partial_result_{}_{}_{}_{}.jpg".format(img_name, idx_a, idx_b, algorithm))
+            return -idx_a, result
         else:
-            return img_a
-    return img_a
+            return idx_a, img_a
+    return idx_a, img_a
 
 
 def estimate_homography(keypoints_a, keypoints_b, matches, reproj_threshold):
     points_a = np.array([np.array(keypoints_a[i].pt, dtype=np.float32) for (_, i) in matches], dtype=np.float32)
     points_b = np.array([np.array(keypoints_b[i].pt, dtype=np.float32) for (i, _) in matches], dtype=np.float32)
 
-    # (5)  executar  a  técnica  RANSAC  (RANdom  SAmple  Consensus)  para  estimar  a  matriz  de  homografia(cv2.findHomography).
+    # (5) RANSAC
     (H, status) = cv.findHomography(points_a, points_b, cv.RANSAC, reproj_threshold)
     return H, status
 
@@ -96,7 +102,7 @@ def warp_img(H, img_a, img_b):
     result = cv.warpPerspective(np.array(img_a, dtype="uint8"), H,
                                 (img_a.shape[1] + img_b.shape[1], max(img_a.shape[0], img_b.shape[0])))
 
-    # (7)  unir as imagens alinhadas e criar a imagem panorˆamica.
+    # (7) stitch images together
     result[0:img_b.shape[0], 0:img_b.shape[1]] = img_b
     return result
 
@@ -139,10 +145,13 @@ def create_panorama(descriptor_name, detector_name, normalized_imgs, output_path
     reproj_threshold = 4.
     alg = descriptor_name if descriptor_name in ["sift", "surf", "orb", "kaze", "akaze"] else "{}_{}".format(descriptor_name,
                                                                                                              detector_name)
-    result = reduce(lambda a, b: stitch(a[1], b[1], ratio, descriptor_apply_function, matcher, reproj_threshold, True, a[0] + 1, b[0] + 1, img_name,
-                                        alg),
-                    enumerate(normalized_imgs))
-    save_img(result, "{}/{}_result_{}.jpg".format(output_path, img_name, alg))
+
+    def r_stitch(a, b):
+        return stitch(a[1], b[1], ratio, descriptor_apply_function, matcher, reproj_threshold, True, a[0] + 1, b[0] + 1, img_name,
+                      alg)
+
+    result = reduce(r_stitch, enumerate(normalized_imgs))
+    save_img(result[1], "{}/{}_result_{}.jpg".format(output_path, img_name, alg))
 
 
 if __name__ == '__main__':
@@ -153,7 +162,7 @@ if __name__ == '__main__':
     parser.add_argument("name", metavar="IMAGE_NAME",
                         help="image file name without extension")
     parser.add_argument("-n", metavar="FILE_COUNT", default=2, type=int,
-                        help="image file name format")
+                        help="number of images to stitch")
     parser.add_argument("--input_path", default="./imgs",
                         help="input image file path")
     parser.add_argument("--output_path", default="./imgs/out",
@@ -181,7 +190,7 @@ if __name__ == '__main__':
     normalized_imgs = [normalize_img(grayscale_img, MIN, MAX).astype(np.uint8) for grayscale_img in grayscale_imgs]
 
     if args.descriptor == "all":
-        for dscrpt in ["orb", "brief", "kaze", "akaze"]:
+        for dscrpt in ["orb", "brief", "kaze", "akaze", "sift", "surf"]:
             for dtctr in ["MSER", "FAST", "AGAST", "GFFT", "STAR"] if dscrpt == "brief" else ["FAST"]:
                 create_panorama(dscrpt, dtctr, normalized_imgs, output_path, img_name)
     else:
