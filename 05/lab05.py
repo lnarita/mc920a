@@ -16,11 +16,6 @@ from sklearn.cluster import KMeans
 
 
 def load_image(path):
-    """
-    loads the pixel matrix that represents the image stored in `path`
-    :param path: the file path to the image
-    :return: the np array representing that image
-    """
     return cv2.imread(path)
 
 
@@ -68,17 +63,12 @@ def inner(_it, _timer{init}):
 
 @timed
 def cluster(image, k, n_init=10, max_iter=300):
-    """
-    Groups the image's pixels into clusters by their colour similarity and
-    then creates an image representation using only the n_clusters colours
-    """
     k_colours = KMeans(k, n_init=n_init, max_iter=max_iter).fit(image)
     compressed = k_colours.cluster_centers_[k_colours.labels_]
     compressed = np.reshape(compressed, image.shape)
     return compressed, Codebook(k_colours.labels_, k_colours.cluster_centers_)
 
 
-@timed
 def extract_colour_components(flat_img):
     b = flat_img[:, 0]
     g = flat_img[:, 1]
@@ -91,7 +81,6 @@ def extract_unique_colours(flat_img):
     return np.vstack([tuple(r) for r in flat_img])
 
 
-@timed
 def convert_bgr_to_rgb(b, g, r):
     rgb = np.zeros((b.shape[0], 3))
     rgb[:, 0] = r
@@ -120,9 +109,6 @@ def plot_colour_matrix(colours, file_name):
 
 @timed
 def plot_clusters(flat_img, labels, colours, file_name):
-    """
-    Plots the original image's pixels with their cluster colours
-    """
     b, g, r = extract_colour_components(flat_img)
 
     rgb = convert_bgr_to_rgb(*extract_colour_components(colours))
@@ -136,6 +122,7 @@ def plot_clusters(flat_img, labels, colours, file_name):
 
     if file_name:
         plt.savefig(file_name, bbox_inches='tight')
+        print("saved output to {}".format(file_name))
 
 
 def plot_alternate_colour_matrix(a, b, c, colours, file_name, x_label, y_label, z_label):
@@ -147,6 +134,41 @@ def plot_alternate_colour_matrix(a, b, c, colours, file_name, x_label, y_label, 
     ax.set_xlabel(x_label)
     ax.set_ylabel(y_label)
     ax.set_zlabel(z_label)
+
+    if file_name:
+        plt.savefig(file_name, bbox_inches='tight')
+        print("saved output to {}".format(file_name))
+
+
+def plot_palette(labels, colours, file_name):
+    label_names = np.arange(0, len(colours))
+
+    # find colour usage %
+    (hist, _) = np.histogram(labels, bins=label_names)
+    hist = hist.astype("float")
+    hist /= hist.sum()
+
+    # sort colours by most used to least used
+    sorted_idx = (-hist).argsort()
+    ordered_colours = colours[sorted_idx]
+    hist = hist[sorted_idx]
+
+    # creating empty chart
+    palette = np.zeros((51, 500, 3), np.uint8)
+    start = 0
+
+    # creating color rectangles
+    for freq, c in zip(hist, ordered_colours):
+        end = int(start + freq * 500)
+        radius = int(freq * 25)
+        b, g, r = (c * 255)
+        cv2.circle(palette, (start + 25, 25), radius, np.array((np.uint8(r), np.uint8(g), np.uint8(b))), -1)
+
+        # cv2.rectangle(palette, (start, 0), (end, 50), (r, g, b))
+        start = int(end)
+
+    plt.figure()
+    plt.axis("off")
 
     if file_name:
         plt.savefig(file_name, bbox_inches='tight')
@@ -167,6 +189,8 @@ if __name__ == '__main__':
                         help="input image file path")
     parser.add_argument("--output_path", default="./imgs/out",
                         help="output image path")
+    parser.add_argument("--colorvis", action="store_true",
+                        help="generate color scatter plots")
 
     args = parser.parse_args()
 
@@ -190,6 +214,7 @@ if __name__ == '__main__':
     printable_k_image = unflatten(printable_k_image, image.shape)
 
     save_img(printable_k_image, "{}/{}_{}.{}".format(output_path, img_name, k, ext))
+
 
     def plot_hsv():
         hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
@@ -219,20 +244,23 @@ if __name__ == '__main__':
         plot_clusters(normalized_img, codebook.labels, codebook.cluster_centers, "{}/{}_{}_clusters.{}".format(output_path, img_name, k, ext))
 
 
-    pool = multiprocessing.Pool(5)
+    def plot_ordered_colour_palette():
+        plot_palette(codebook.labels, codebook.cluster_centers, "{}/{}_{}_palette.{}".format(output_path, img_name, k, ext))
 
-    plots = [
-        pool.apply_async(func=plot_hls),
-        pool.apply_async(func=plot_hsv),
-        pool.apply_async(func=plot_original_colours),
-        pool.apply_async(func=plot_cluster_colours),
-        pool.apply_async(func=plot_pixel_clusters),
-    ]
 
-    pool.close()
-    pool.join()
+    if args.colorvis:
+        pool = multiprocessing.Pool(5)
 
-    for p in plots:
-        p.get(timeout=10)
+        plots = [
+            pool.apply_async(func=plot_hls),
+            # pool.apply_async(func=plot_ordered_colour_palette)
+            pool.apply_async(func=plot_original_colours),
+            pool.apply_async(func=plot_cluster_colours),
+            pool.apply_async(func=plot_pixel_clusters),
+        ]
 
-    exit(0)
+        pool.close()
+        pool.join()
+
+        for p in plots:
+            p.get(timeout=10)
