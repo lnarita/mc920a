@@ -143,36 +143,24 @@ def plot_alternate_colour_matrix(a, b, c, colours, file_name, x_label, y_label, 
 def plot_palette(labels, colours, file_name):
     label_names = np.arange(0, len(colours))
 
-    # find colour usage %
     (hist, _) = np.histogram(labels, bins=label_names)
     hist = hist.astype("float")
     hist /= hist.sum()
 
-    # sort colours by most used to least used
     sorted_idx = (-hist).argsort()
     ordered_colours = colours[sorted_idx]
     hist = hist[sorted_idx]
 
-    # creating empty chart
     palette = np.zeros((51, 500, 3), np.uint8)
     start = 0
 
-    # creating color rectangles
     for freq, c in zip(hist, ordered_colours):
         end = int(start + freq * 500)
-        radius = int(freq * 25)
-        b, g, r = (c * 255)
-        cv2.circle(palette, (start + 25, 25), radius, np.array((np.uint8(r), np.uint8(g), np.uint8(b))), -1)
-
-        # cv2.rectangle(palette, (start, 0), (end, 50), (r, g, b))
+        cv2.rectangle(palette, (start, 0), (end, 50), c * 255, -1)
         start = int(end)
 
-    plt.figure()
-    plt.axis("off")
-
     if file_name:
-        plt.savefig(file_name, bbox_inches='tight')
-        print("saved output to {}".format(file_name))
+        save_img(palette, file_name)
 
 
 if __name__ == '__main__':
@@ -253,7 +241,7 @@ if __name__ == '__main__':
 
         plots = [
             pool.apply_async(func=plot_hls),
-            # pool.apply_async(func=plot_ordered_colour_palette)
+            pool.apply_async(func=plot_ordered_colour_palette),
             pool.apply_async(func=plot_original_colours),
             pool.apply_async(func=plot_cluster_colours),
             pool.apply_async(func=plot_pixel_clusters),
